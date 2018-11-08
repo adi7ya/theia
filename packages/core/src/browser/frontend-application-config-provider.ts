@@ -38,6 +38,15 @@ export class FrontendApplicationConfigProvider {
         globalObject[key] = config;
     }
 
+    /**
+     * When testing, we might want to unset a test configuration.
+     */
+    protected static unset(): void {
+        const globalObject = window as any;
+        const key = FrontendApplicationConfigProvider.KEY;
+        delete globalObject[key];
+    }
+
     private static doGet(): FrontendApplicationConfig | undefined {
         // tslint:disable-next-line:no-any
         const globalObject = window as any;
