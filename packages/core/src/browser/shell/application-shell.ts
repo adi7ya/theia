@@ -639,15 +639,22 @@ export class ApplicationShell extends Widget implements WidgetTracker {
             console.error('Widgets added to the application shell must have a unique id property.');
             return;
         }
+        let resolved = options;
+        if (!resolved.ref) {
+            const ref = this.currentWidget;
+            if (ref && this.getAreaFor(ref) === resolved.area) {
+                resolved = { ...options, ref };
+            }
+        }
         switch (options.area) {
             case 'main':
-                this.mainPanel.addWidget(widget, options);
+                this.mainPanel.addWidget(widget, resolved);
                 break;
             case 'top':
                 this.topPanel.addWidget(widget);
                 break;
             case 'bottom':
-                this.bottomPanel.addWidget(widget, options);
+                this.bottomPanel.addWidget(widget, resolved);
                 break;
             case 'left':
                 this.leftPanelHandler.addWidget(widget, options);
