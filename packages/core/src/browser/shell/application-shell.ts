@@ -634,7 +634,7 @@ export class ApplicationShell extends Widget implements WidgetTracker {
      *
      * Widgets added to the top area are not tracked regarding the _current_ and _active_ states.
      */
-    addWidget(widget: Widget, options: ApplicationShell.WidgetOptions) {
+    addWidget(widget: Widget, options: Readonly<ApplicationShell.WidgetOptions> = {}) {
         if (!widget.id) {
             console.error('Widgets added to the application shell must have a unique id property.');
             return;
@@ -642,11 +642,15 @@ export class ApplicationShell extends Widget implements WidgetTracker {
         let resolved = options;
         if (!resolved.ref) {
             const ref = this.currentWidget;
-            if (ref && this.getAreaFor(ref) === resolved.area) {
-                resolved = { ...options, ref };
+            const area = ref && this.getAreaFor(ref);
+            if (ref && (!resolved.area || area === resolved.area)) {
+                resolved = { ...options, ref, area };
             }
+        } else if (!resolved.area) {
+            const area = this.getAreaFor(resolved.ref);
+            resolved = { ...options, area };
         }
-        switch (options.area) {
+        switch (resolved.area) {
             case 'main':
                 this.mainPanel.addWidget(widget, resolved);
                 break;
@@ -663,9 +667,9 @@ export class ApplicationShell extends Widget implements WidgetTracker {
                 this.rightPanelHandler.addWidget(widget, options);
                 break;
             default:
-                throw new Error('Illegal argument: ' + options.area);
+                this.mainPanel.addWidget(widget, resolved);
         }
-        if (options.area !== 'top') {
+        if (resolved.area !== 'top') {
             this.track(widget);
         }
     }
@@ -1326,7 +1330,7 @@ export namespace ApplicationShell {
         /**
          * The area of the application shell where the widget will reside.
          */
-        area: Area;
+        area?: Area;
     }
 
     /**
