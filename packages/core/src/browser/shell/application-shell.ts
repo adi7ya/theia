@@ -117,13 +117,13 @@ export class ApplicationShell extends Widget implements WidgetTracker {
     /**
      * The dock panel in the main shell area. This is where editors usually go to.
      */
-    readonly mainPanel: DockPanel;
+    readonly mainPanel: TheiaDockPanel;
 
     /**
      * The dock panel in the bottom shell area. In contrast to the main panel, the bottom panel
      * can be collapsed and expanded.
      */
-    readonly bottomPanel: DockPanel;
+    readonly bottomPanel: TheiaDockPanel;
 
     /**
      * Handler for the left side panel. The primary application views go here, such as the
@@ -362,7 +362,7 @@ export class ApplicationShell extends Widget implements WidgetTracker {
     /**
      * Create the dock panel in the main shell area.
      */
-    protected createMainPanel(): DockPanel {
+    protected createMainPanel(): TheiaDockPanel {
         const renderer = this.dockPanelRendererFactory(this);
         renderer.tabBarClasses.push(MAIN_BOTTOM_AREA_CLASS);
         renderer.tabBarClasses.push(MAIN_AREA_CLASS);
@@ -378,7 +378,7 @@ export class ApplicationShell extends Widget implements WidgetTracker {
     /**
      * Create the dock panel in the bottom shell area.
      */
-    protected createBottomPanel(): DockPanel {
+    protected createBottomPanel(): TheiaDockPanel {
         const renderer = this.dockPanelRendererFactory(this);
         renderer.tabBarClasses.push(MAIN_BOTTOM_AREA_CLASS);
         renderer.tabBarClasses.push(BOTTOM_AREA_CLASS);
@@ -639,37 +639,50 @@ export class ApplicationShell extends Widget implements WidgetTracker {
             console.error('Widgets added to the application shell must have a unique id property.');
             return;
         }
-        let resolved = options;
-        if (!resolved.ref) {
-            const ref = this.currentWidget;
-            const area = ref && this.getAreaFor(ref);
-            if (ref && (!resolved.area || area === resolved.area)) {
-                resolved = { ...options, ref, area };
-            }
-        } else if (!resolved.area) {
-            const area = this.getAreaFor(resolved.ref);
-            resolved = { ...options, area };
+        let ref: Widget | undefined = options.ref;
+        let area: ApplicationShell.Area = options.area || 'main';
+        if (!ref && (area === 'main' || area === 'bottom')) {
+            const tabBar = this.getTabBarFor(area);
+            ref = tabBar && tabBar.currentTitle && tabBar.currentTitle.owner || undefined;
         }
-        switch (resolved.area) {
+        // make sure that ref belongs to area
+        area = ref && this.getAreaFor(ref) || area;
+        const addOptions: DockPanel.IAddOptions = {};
+        if (ApplicationShell.isOpenToSideMode(options.mode)) {
+            const sideRef = ref && (options.mode === 'open-to-left' ?
+                this.previousTabBarWidget(ref) :
+                this.nextTabBarWidget(ref));
+            if (sideRef) {
+                addOptions.ref = sideRef;
+            } else {
+                addOptions.ref = ref;
+                addOptions.mode = options.mode === 'open-to-left' ? 'split-left' : 'split-right';
+            }
+        } else {
+            addOptions.ref = ref;
+            addOptions.mode = options.mode;
+        }
+        const sidePanelOptions: SidePanel.WidgetOptions = { rank: options.rank };
+        switch (area) {
             case 'main':
-                this.mainPanel.addWidget(widget, resolved);
+                this.mainPanel.addWidget(widget, addOptions);
                 break;
             case 'top':
                 this.topPanel.addWidget(widget);
                 break;
             case 'bottom':
-                this.bottomPanel.addWidget(widget, resolved);
+                this.bottomPanel.addWidget(widget, addOptions);
                 break;
             case 'left':
-                this.leftPanelHandler.addWidget(widget, options);
+                this.leftPanelHandler.addWidget(widget, sidePanelOptions);
                 break;
             case 'right':
-                this.rightPanelHandler.addWidget(widget, options);
+                this.rightPanelHandler.addWidget(widget, sidePanelOptions);
                 break;
             default:
-                this.mainPanel.addWidget(widget, resolved);
+                throw new Error('Unexpected area: ' + options.area);
         }
-        if (resolved.area !== 'top') {
+        if (area !== 'top') {
             this.track(widget);
         }
     }
@@ -1092,9 +1105,9 @@ export class ApplicationShell extends Widget implements WidgetTracker {
         if (typeof widgetOrArea === 'string') {
             switch (widgetOrArea) {
                 case 'main':
-                    return this.mainPanel.tabBars().next();
+                    return this.mainPanel.currentTabBar;
                 case 'bottom':
-                    return this.bottomPanel.tabBars().next();
+                    return this.bottomPanel.currentTabBar;
                 case 'left':
                     return this.leftPanelHandler.tabBar;
                 case 'right':
@@ -1104,11 +1117,11 @@ export class ApplicationShell extends Widget implements WidgetTracker {
             }
         } else if (widgetOrArea && widgetOrArea.isAttached) {
             const widgetTitle = widgetOrArea.title;
-            const mainPanelTabBar = find(this.mainPanel.tabBars(), bar => ArrayExt.firstIndexOf(bar.titles, widgetTitle) > -1);
+            const mainPanelTabBar = this.mainPanel.findTabBar(widgetTitle);
             if (mainPanelTabBar) {
                 return mainPanelTabBar;
             }
-            const bottomPanelTabBar = find(this.bottomPanel.tabBars(), bar => ArrayExt.firstIndexOf(bar.titles, widgetTitle) > -1);
+            const bottomPanelTabBar = this.mainPanel.findTabBar(widgetTitle);
             if (bottomPanelTabBar) {
                 return bottomPanelTabBar;
             }
@@ -1144,6 +1157,38 @@ export class ApplicationShell extends Widget implements WidgetTracker {
      */
     get allTabBars(): TabBar<Widget>[] {
         return [...this.mainAreaTabBars, ...this.bottomAreaTabBars, this.leftPanelHandler.tabBar, this.rightPanelHandler.tabBar];
+    }
+
+    nextTabBarWidget(widget: Widget): Widget | undefined {
+        const current = this.getTabBarFor(widget);
+        const next = current && this.nextTabBarInPanel(current, this.mainPanel, this.bottomPanel);
+        return next && next.currentTitle && next.currentTitle.owner || undefined;
+    }
+    protected nextTabBarInPanel(tabBar: TabBar<Widget>, ...panels: DockPanel[]): TabBar<Widget> | undefined {
+        for (const panel of panels) {
+            const tabBars = toArray(panel.tabBars());
+            const index = tabBars.indexOf(tabBar);
+            if (index !== -1) {
+                return tabBars[index + 1];
+            }
+        }
+        return undefined;
+    }
+
+    previousTabBarWidget(widget: Widget): Widget | undefined {
+        const current = this.getTabBarFor(widget);
+        const previous = current && this.previousTabBarInPanel(current, this.mainPanel, this.bottomPanel);
+        return previous && previous.currentTitle && previous.currentTitle.owner || undefined;
+    }
+    protected previousTabBarInPanel(tabBar: TabBar<Widget>, ...panels: DockPanel[]): TabBar<Widget> | undefined {
+        for (const panel of panels) {
+            const tabBars = toArray(panel.tabBars());
+            const index = tabBars.indexOf(tabBar);
+            if (index !== -1) {
+                return tabBars[index - 1];
+            }
+        }
+        return undefined;
     }
 
     /*
@@ -1324,13 +1369,34 @@ export namespace ApplicationShell {
     });
 
     /**
+     * Whether a widget should be opened to the side tab bar relatively to the reference widget.
+     */
+    export type OpenToSideMode = 'open-to-left' | 'open-to-right';
+    // tslint:disable-next-line:no-any
+    export function isOpenToSideMode(mode: OpenToSideMode | any): mode is OpenToSideMode {
+        return mode === 'open-to-left' || mode === 'open-to-right';
+    }
+
+    /**
      * Options for adding a widget to the application shell.
      */
-    export interface WidgetOptions extends DockLayout.IAddOptions, SidePanel.WidgetOptions {
+    export interface WidgetOptions extends SidePanel.WidgetOptions {
         /**
          * The area of the application shell where the widget will reside.
          */
         area?: Area;
+        /**
+         * The insertion mode for adding the widget.
+         *
+         * The default is `'tab-after'`.
+         */
+        mode?: DockLayout.InsertMode | OpenToSideMode
+        /**
+         * The reference widget for the insert location.
+         *
+         * The default is `undefined`.
+         */
+        ref?: Widget;
     }
 
     /**

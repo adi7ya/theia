@@ -15,7 +15,7 @@
  ********************************************************************************/
 
 import { injectable, inject } from 'inversify';
-import { find, map, toArray, some } from '@phosphor/algorithm';
+import { find, map, toArray, some, ArrayExt } from '@phosphor/algorithm';
 import { TabBar, Widget, DockPanel, Title, Panel, BoxPanel, BoxLayout, SplitPanel } from '@phosphor/widgets';
 import { Signal } from '@phosphor/signaling';
 import { MimeData } from '@phosphor/coreutils';
@@ -627,6 +627,29 @@ export class TheiaDockPanel extends DockPanel {
      * Emitted when a widget is removed from the panel.
      */
     readonly widgetRemoved = new Signal<this, Widget>(this);
+
+    protected _currentTitle: Title<Widget> | undefined;
+    get currentTitle(): Title<Widget> | undefined {
+        return this._currentTitle;
+    }
+    get currentTabBar(): TabBar<Widget> | undefined {
+        return this._currentTitle && this.findTabBar(this._currentTitle);
+    }
+    findTabBar(title: Title<Widget>): TabBar<Widget> | undefined {
+        return find(this.tabBars(), bar => ArrayExt.firstIndexOf(bar.titles, title) > -1);
+    }
+
+    constructor(options?: DockPanel.IOptions) {
+        super(options);
+        this['_onCurrentChanged'] = (sender: TabBar<Widget>, args: TabBar.ICurrentChangedArgs<Widget>) => {
+            this._currentTitle = args.currentTitle || undefined;
+            super['_onCurrentChanged'](sender, args);
+        };
+        this['_onTabActivateRequested'] = (sender: TabBar<Widget>, args: TabBar.ITabActivateRequestedArgs<Widget>) => {
+            this._currentTitle = args.title;
+            super['_onTabActivateRequested'](sender, args);
+        };
+    }
 
     addWidget(widget: Widget, options?: DockPanel.IAddOptions): void {
         if (this.mode === 'single-document' && widget.parent === this) {
