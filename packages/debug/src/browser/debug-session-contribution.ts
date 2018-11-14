@@ -23,6 +23,8 @@ import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging/w
 import { DebugSession } from './debug-session';
 import { BreakpointManager } from './breakpoint/breakpoint-manager';
 import { DebugSessionOptions } from './debug-session-options';
+import { OutputChannelManager, OutputChannel } from '@theia/output/lib/common/output-channel';
+import { DebugPreferences } from './debug-preferences';
 
 /**
  * DebugSessionContribution symbol for DI.
@@ -76,7 +78,19 @@ export class DefaultDebugSessionFactory implements DebugSessionFactory {
     @inject(MessageClient)
     protected readonly messages: MessageClient;
 
+    @inject(OutputChannelManager)
+    protected readonly outputChannelManager: OutputChannelManager;
+
+    @inject(DebugPreferences)
+    protected readonly debugPreferences: DebugPreferences;
+
     get(sessionId: string, options: DebugSessionOptions): DebugSession {
+        let traceOutputChannel: OutputChannel | undefined;
+
+        if (this.debugPreferences['debug.trace']) {
+            traceOutputChannel = this.outputChannelManager.getChannel(`Debug session ${sessionId}`);
+        }
+
         return new DebugSession(
             sessionId,
             options,
@@ -85,7 +99,8 @@ export class DefaultDebugSessionFactory implements DebugSessionFactory {
             this.editorManager,
             this.breakpoints,
             this.labelProvider,
-            this.messages
+            this.messages,
+            traceOutputChannel,
         );
     }
 }
